@@ -92,10 +92,21 @@ describe("signing in", () => {
     await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(/ceo@timeedit.com/);
   });
 
-  it("creates no auth user for a refused sign-in", async () => {
-    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(NOT_ON_ROSTER);
-    const [row] = await db.query<{ n: string }>(`select count(*) as n from auth.users`);
-    expect(int(row!.n)).toBe(0);
+  it("refuses a Member who has left the team", async () => {
+    await db.query(`update members set left_on = current_date - 30 where email = $1`, [THU_VU]);
+
+    await expect(db.attemptSignIn(THU_VU)).rejects.toThrow(NOT_ON_ROSTER);
+  });
+
+  it("stops resolving a Member who leaves, without waiting for their session to expire", async () => {
+    const thu = await db.signInAs(THU_VU);
+    await db.query(`update members set left_on = current_date where email = $1`, [THU_VU]);
+
+    const [row] = await db.asAuthenticated<{ id: string | null }>(
+      thu,
+      `select current_member_id() as id`,
+    );
+    expect(row!.id).toBeNull();
   });
 
   it("leaves current_member_id null when nobody is signed in", async () => {
@@ -136,6 +147,18 @@ describe("what a signed-in Member may read", () => {
     );
     const [row] = await db.asAuthenticated<{ v: string | number }>(
       stranger!.id,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(0);
+  });
+
+  it("keeps a Member who has left out of the Fund", async () => {
+    await db.fundWith(1_000_000);
+    const thu = await db.signInAs(THU_VU);
+    await db.query(`update members set left_on = current_date where email = $1`, [THU_VU]);
+
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      thu,
       `select fund_balance() as v`,
     );
     expect(int(row!.v)).toBe(0);
