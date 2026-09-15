@@ -79,6 +79,9 @@ export interface FundTestDb extends Db {
     params?: unknown[],
   ): Promise<T[]>;
 
+  /** The same thing shaped as the `Db` the app passes around. */
+  dbFor(authUserId: string | null): Db;
+
   memberId(email: string): Promise<string>;
   /** The one Balance figure: accepted Contributions less non-voided Expenses. */
   balance(): Promise<number>;
@@ -125,6 +128,26 @@ export async function createFundDb(): Promise<FundTestDb> {
     return row.id;
   };
 
+  const asAuthenticated = async <T>(
+    authUserId: string | null,
+    text: string,
+    params: unknown[] = [],
+  ): Promise<T[]> => {
+    await query(`begin`);
+    try {
+      await query(`select set_config('request.jwt.claims', $1, true)`, [
+        authUserId === null ? "" : JSON.stringify({ sub: authUserId, role: "authenticated" }),
+      ]);
+      await query(`set local role authenticated`);
+      const rows = await query<T>(text, params);
+      await query(`commit`);
+      return rows;
+    } catch (error) {
+      await query(`rollback`);
+      throw error;
+    }
+  };
+
   const attemptSignIn = async (email: string) => {
     const [decision] = await query<{ result: { error?: { message: string } } }>(
       `select before_user_created_hook($1::jsonb) as result`,
@@ -162,20 +185,10 @@ export async function createFundDb(): Promise<FundTestDb> {
       await setClaims(null);
     },
 
-    async asAuthenticated<T>(authUserId: string | null, text: string, params: unknown[] = []) {
-      await query(`begin`);
-      try {
-        await query(`select set_config('request.jwt.claims', $1, true)`, [
-          authUserId === null ? "" : JSON.stringify({ sub: authUserId, role: "authenticated" }),
-        ]);
-        await query(`set local role authenticated`);
-        const rows = await query<T>(text, params);
-        await query(`commit`);
-        return rows;
-      } catch (error) {
-        await query(`rollback`);
-        throw error;
-      }
+    asAuthenticated,
+
+    dbFor(authUserId) {
+      return { query: (text, params) => asAuthenticated(authUserId, text, params) };
     },
 
     async balance() {

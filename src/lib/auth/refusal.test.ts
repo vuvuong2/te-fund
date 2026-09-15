@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyRefusal,
+  isRefusalCode,
   NOT_ON_ROSTER,
   OUTSIDE_DOMAIN,
   type RefusalCode,
@@ -75,5 +76,16 @@ describe("the sentence a refused Member reads", () => {
 
   it("has nothing to say when the Member has not been refused", () => {
     expect(refusalFor(undefined)).toBeNull();
+  });
+});
+
+describe("passing a refusal on in a URL", () => {
+  it("recognises a code it wrote", () => {
+    expect(isRefusalCode("not-on-roster")).toBe(true);
+  });
+
+  it("refuses to pass on anything else", () => {
+    expect(isRefusalCode("not-on-roster&and=more")).toBe(false);
+    expect(isRefusalCode(null)).toBe(false);
   });
 });

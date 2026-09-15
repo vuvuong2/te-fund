@@ -11,6 +11,15 @@
  * back, and the sign-in screen renders copy from here.
  */
 
+/**
+ * The company domain, which is half of who may sign in. It is checked in the
+ * database twice over — by the sign-in hook, and by the constraint that no
+ * Member row may carry an address outside it — and once more on the way back
+ * from Google, so that a project whose hook was never registered refuses a
+ * personal account instead of welcoming it.
+ */
+export const COMPANY_DOMAIN = "timeedit.com";
+
 /** The exact sentences the hook returns. `schema.test.ts` holds the SQL to them. */
 export const OUTSIDE_DOMAIN = "Only @timeedit.com accounts may sign in";
 export const NOT_ON_ROSTER = "No Member on the roster has the address";
@@ -59,6 +68,11 @@ export function classifyRefusal(params: URLSearchParams): RefusalCode | null {
   if (error === null) return null;
   if (error === "access_denied") return "cancelled";
   return "unknown";
+}
+
+/** Whether a string off a URL is one of ours, and so safe to pass on in another. */
+export function isRefusalCode(value: string | null | undefined): value is RefusalCode {
+  return value !== null && value !== undefined && value in REFUSALS;
 }
 
 /** The copy for a refusal code that has been round-tripped through a URL. */
