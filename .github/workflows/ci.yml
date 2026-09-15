@@ -1,0 +1,45 @@
+# The same gate the git hooks run, at the one place --no-verify cannot reach.
+# See the Quality gate section of AGENTS.md.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # Nothing here commits, so the git hooks are dead weight. Stops `npm ci`
+      # installing them by way of the prepare script.
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # Pinned to the deployment target rather than to whatever a laptop
+          # happens to run, so CI fails on what production would fail on.
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Check-only. CI reports formatting drift; it never rewrites the code.
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # PGlite boots Postgres in-process, so there is no service container and
+      # no database to provision.
+      - run: npm test
+
+      # `page.tsx` is force-dynamic, so this needs no DATABASE_URL and no secrets.
+      - run: npm run build
