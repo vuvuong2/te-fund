@@ -152,6 +152,16 @@ describe("what a signed-in Member may read", () => {
     expect(int(row!.v)).toBe(0);
   });
 
+  it("keeps the Fund's overview from a signed-out visitor", async () => {
+    await db.fundWith(1_000_000);
+
+    const [row] = await db.asAuthenticated<{ balance_vnd: string | number }>(
+      null,
+      `select balance_vnd from fund_overview`,
+    );
+    expect(int(row!.balance_vnd)).toBe(0);
+  });
+
   it("keeps a Member who has left out of the Fund", async () => {
     await db.fundWith(1_000_000);
     const thu = await db.signInAs(THU_VU);
@@ -168,6 +178,35 @@ describe("what a signed-in Member may read", () => {
     await db.fundWith(1_000_000);
     const rows = await db.asAuthenticated(null, `select * from ledger`);
     expect(rows).toEqual([]);
+  });
+});
+
+describe("what the anonymous role may reach", () => {
+  it("may execute nothing in the Fund's schema", async () => {
+    // Postgres grants EXECUTE to PUBLIC on every new function, and `anon`
+    // inherits it: revoking from `anon` alone takes nothing away.
+    const rows = await db.query<{ name: string }>(
+      `select p.proname as name
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and has_function_privilege('anon', p.oid, 'execute')
+        order by p.proname`,
+    );
+
+    expect(rows.map((r) => r.name)).toEqual([]);
+  });
+
+  it("may read nothing the Fund keeps", async () => {
+    const rows = await db.query<{ name: string }>(
+      `select c.relname as name
+         from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public'
+          and c.relkind in ('r', 'v')
+          and has_table_privilege('anon', c.oid, 'select')
+        order by c.relname`,
+    );
+
+    expect(rows.map((r) => r.name)).toEqual([]);
   });
 });
 
