@@ -16,7 +16,8 @@ export const YEN_VU = "yen.vu@timeedit.com";
 
 /**
  * The Supabase-specific pieces a plain Postgres does not have: the
- * `authenticated` role the policies are granted to, the `auth.users` table a
+ * `authenticated` role the policies are granted to, `supabase_auth_admin` --
+ * the role Supabase Auth calls the sign-in hook as -- the `auth.users` table a
  * Google sign-in lands in, and `auth.uid()`.
  */
 const AUTH_STUB = `
@@ -24,7 +25,7 @@ const AUTH_STUB = `
   do $$
   declare r text;
   begin
-    foreach r in array array['anon', 'authenticated', 'service_role'] loop
+    foreach r in array array['anon', 'authenticated', 'service_role', 'supabase_auth_admin'] loop
       if not exists (select 1 from pg_roles where rolname = r) then
         execute format('create role %I', r);
       end if;
@@ -52,7 +53,11 @@ const AUTH_STUB = `
 export interface FundTestDb extends Db {
   /** Sign in as the Member with this address, the way a Google sign-in would. */
   signInAs(email: string): Promise<string>;
-  /** Attempt a sign-in without assuming it will be allowed. */
+  /**
+   * Attempt a sign-in without assuming it will be allowed: runs the
+   * `before_user_created_hook` first, exactly as Supabase Auth does, and
+   * rejects with the hook's own message when it refuses.
+   */
   attemptSignIn(email: string): Promise<string>;
   signOut(): Promise<void>;
 
@@ -103,6 +108,13 @@ export async function createFundDb(): Promise<FundTestDb> {
   };
 
   const attemptSignIn = async (email: string) => {
+    const [decision] = await query<{ result: { error?: { message: string } } }>(
+      `select before_user_created_hook($1::jsonb) as result`,
+      [JSON.stringify({ user: { email } })],
+    );
+    const refusal = decision!.result.error;
+    if (refusal) throw new Error(refusal.message);
+
     const [user] = await query<{ id: string }>(
       `insert into auth.users (email) values (lower($1)) returning id`,
       [email],

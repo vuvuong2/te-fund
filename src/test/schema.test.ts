@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NOT_ON_ROSTER, OUTSIDE_DOMAIN } from "@/lib/auth/refusal";
 import { int } from "@/lib/db";
 import {
   createFundDb,
@@ -77,15 +78,23 @@ describe("signing in", () => {
   });
 
   it("refuses a sign-in from outside @timeedit.com", async () => {
-    await expect(db.attemptSignIn("outsider@gmail.com")).rejects.toThrow(
-      /Only @timeedit.com accounts may sign in/,
-    );
+    // The sentences are asserted through the constants the sign-in screen
+    // matches on, so rewording the SQL without rewording the screen fails here.
+    await expect(db.attemptSignIn("outsider@gmail.com")).rejects.toThrow(OUTSIDE_DOMAIN);
   });
 
   it("refuses a company address that is not on the roster", async () => {
-    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(
-      /No Member on the roster has the address/,
-    );
+    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(NOT_ON_ROSTER);
+  });
+
+  it("names the address it refused, so the person can see which account they used", async () => {
+    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(/ceo@timeedit.com/);
+  });
+
+  it("creates no auth user for a refused sign-in", async () => {
+    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(NOT_ON_ROSTER);
+    const [row] = await db.query<{ n: string }>(`select count(*) as n from auth.users`);
+    expect(int(row!.n)).toBe(0);
   });
 
   it("leaves current_member_id null when nobody is signed in", async () => {
