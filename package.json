@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "lefthook install",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -27,6 +28,7 @@
     "@types/node": "^26.5.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "lefthook": "^2.1.14",
     "supabase": "^2.117.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

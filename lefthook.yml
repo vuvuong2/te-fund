@@ -1,0 +1,26 @@
+# The quality gate. See the Quality gate section of AGENTS.md for the reasoning,
+# including what is deliberately left out.
+#
+# Two tiers: commit stays fast enough not to be resented, push carries the slow
+# checks that stop broken work reaching anyone else.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      # Staged files only, so this stays around a second. Biome rewrites
+      # formatting and re-stages the result; a lint error it cannot safely fix
+      # still fails the commit.
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css}"
+      run: npx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: false
+  jobs:
+    - name: typecheck
+      run: npm run typecheck
+    - name: test
+      run: npm test
+    - name: build
+      run: npm run build
