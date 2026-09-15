@@ -530,3 +530,30 @@ describe("the audit trail", () => {
     expect(await db.holderOf(SEPTEMBER)).toBe("Thu Vu");
   });
 });
+
+describe("row level security", () => {
+  /**
+   * This fixture connects as superuser, so it cannot prove a policy blocks a
+   * non-Member — that is VN-6, against a real Supabase instance. What it can
+   * hold onto is the property the policies depend on: a view without
+   * security_invoker runs as its owner and bypasses them entirely, which is
+   * how fund_overview came to hand the Fund's Balance to an anonymous caller.
+   */
+  it("makes the views read as the Member querying them, not as their owner", async () => {
+    const rows = await db.query<{ viewname: string; security_invoker: string | null }>(
+      `select c.relname as viewname,
+              (select o.option_value
+                 from pg_options_to_table(c.reloptions) o
+                where o.option_name = 'security_invoker') as security_invoker
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+        where c.relkind = 'v' and n.nspname = 'public'
+        order by c.relname`,
+    );
+
+    expect(rows).toEqual([
+      { viewname: "fund_overview", security_invoker: "on" },
+      { viewname: "ledger", security_invoker: "on" },
+    ]);
+  });
+});
