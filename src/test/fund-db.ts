@@ -48,6 +48,11 @@ const AUTH_STUB = `
       ''
     )::uuid;
   $$;
+
+  -- Supabase grants these itself. Without them current_member_id(), which calls
+  -- auth.uid(), fails for the very role every signed-in request runs as.
+  grant usage on schema auth to anon, authenticated, service_role;
+  grant execute on function auth.uid() to anon, authenticated, service_role;
 `;
 
 export interface FundTestDb extends Db {
@@ -60,6 +65,19 @@ export interface FundTestDb extends Db {
    */
   attemptSignIn(email: string): Promise<string>;
   signOut(): Promise<void>;
+
+  /**
+   * Run a query the way a signed-in request does -- as the `authenticated`
+   * role, carrying this auth user's claims. The fixture's own connection is
+   * superuser and bypasses row level security; this is the only way to see
+   * what a Member is actually allowed to read. Pass null for a visitor with no
+   * session at all.
+   */
+  asAuthenticated<T = Record<string, unknown>>(
+    authUserId: string | null,
+    text: string,
+    params?: unknown[],
+  ): Promise<T[]>;
 
   memberId(email: string): Promise<string>;
   /** The one Balance figure: accepted Contributions less non-voided Expenses. */
@@ -142,6 +160,22 @@ export async function createFundDb(): Promise<FundTestDb> {
 
     async signOut() {
       await setClaims(null);
+    },
+
+    async asAuthenticated<T>(authUserId: string | null, text: string, params: unknown[] = []) {
+      await query(`begin`);
+      try {
+        await query(`select set_config('request.jwt.claims', $1, true)`, [
+          authUserId === null ? "" : JSON.stringify({ sub: authUserId, role: "authenticated" }),
+        ]);
+        await query(`set local role authenticated`);
+        const rows = await query<T>(text, params);
+        await query(`commit`);
+        return rows;
+      } catch (error) {
+        await query(`rollback`);
+        throw error;
+      }
     },
 
     async balance() {

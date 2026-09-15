@@ -21,9 +21,10 @@ import {
  * onwards) its tests point at that module instead; these stay as the proof
  * that the substrate underneath it behaves.
  *
- * Not covered here: the RLS policies. This fixture connects as superuser, so
- * row level security is bypassed — proving it blocks a non-Member needs a real
- * Supabase instance (VN-6).
+ * The fixture's own connection is superuser, so row level security is bypassed
+ * on it. `asAuthenticated` re-enters as the `authenticated` role with a
+ * Member's claims, which is what the policies are written against, so the
+ * refusals below are the real ones rather than a description of them.
  */
 
 const SEPTEMBER = "2026-09-01"; // Tuan Tran holds it, per the seed
@@ -101,6 +102,49 @@ describe("signing in", () => {
     await db.signOut();
     const [row] = await db.query<{ id: string | null }>(`select current_member_id() as id`);
     expect(row!.id).toBeNull();
+  });
+});
+
+describe("what a signed-in Member may read", () => {
+  it("shows the roster to a Member who signed in", async () => {
+    const thu = await db.signInAs(THU_VU);
+    const rows = await db.asAuthenticated(thu, `select full_name from members`);
+    expect(rows).toHaveLength(6);
+  });
+
+  it("shows a signed-out visitor nothing at all", async () => {
+    const rows = await db.asAuthenticated(null, `select full_name from members`);
+    expect(rows).toEqual([]);
+  });
+
+  it("shows the Balance to a Member", async () => {
+    await db.fundWith(1_000_000);
+    const vu = await db.signInAs(VU_VUONG);
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      vu,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(1_000_000);
+  });
+
+  it("keeps the Balance from a Google account with no Member behind it", async () => {
+    await db.fundWith(1_000_000);
+    // A session that outlived its Member, or a token from elsewhere in the
+    // company: authenticated, but current_member_id() finds nobody.
+    const [stranger] = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('ceo@timeedit.com') returning id`,
+    );
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      stranger!.id,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(0);
+  });
+
+  it("keeps the Ledger from a signed-out visitor", async () => {
+    await db.fundWith(1_000_000);
+    const rows = await db.asAuthenticated(null, `select * from ledger`);
+    expect(rows).toEqual([]);
   });
 });
 
