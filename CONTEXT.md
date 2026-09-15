@@ -18,6 +18,14 @@ Always named in full: "Vu" is a given name (Vu Vuong) and a family name (Thu Vu,
 Yen Vu), so a short name is ambiguous across three of the six Members.
 _Avoid_: user, employee, participant
 
+**Roster**:
+The list of Members, and the whole of who may reach the Fund. A Google account
+is let in only if a Member on it has that address, which is what keeps the
+Vietnam team's money away from the rest of the company. A Member who leaves is
+recorded as having left rather than removed, because their Contributions and
+Expenses stay in the ledger.
+_Avoid_: team list, members list, whitelist
+
 **Holder**:
 The Member who physically holds the Fund's cash for a given Month. The role
 rotates. A Holder holding the cash does not change the Fund's balance — only

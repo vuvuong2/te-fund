@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { type Db, int } from "@/lib/db";
+import { BECOME_MEMBER, CLAIM_MEMBER, type Db, int, memberClaims } from "@/lib/db";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 const SEED = join(process.cwd(), "supabase", "seed.sql");
@@ -16,7 +16,8 @@ export const YEN_VU = "yen.vu@timeedit.com";
 
 /**
  * The Supabase-specific pieces a plain Postgres does not have: the
- * `authenticated` role the policies are granted to, the `auth.users` table a
+ * `authenticated` role the policies are granted to, `supabase_auth_admin` --
+ * the role Supabase Auth calls the sign-in hook as -- the `auth.users` table a
  * Google sign-in lands in, and `auth.uid()`.
  */
 const AUTH_STUB = `
@@ -24,7 +25,7 @@ const AUTH_STUB = `
   do $$
   declare r text;
   begin
-    foreach r in array array['anon', 'authenticated', 'service_role'] loop
+    foreach r in array array['anon', 'authenticated', 'service_role', 'supabase_auth_admin'] loop
       if not exists (select 1 from pg_roles where rolname = r) then
         execute format('create role %I', r);
       end if;
@@ -47,14 +48,39 @@ const AUTH_STUB = `
       ''
     )::uuid;
   $$;
+
+  -- Supabase grants these itself. Without them current_member_id(), which calls
+  -- auth.uid(), fails for the very role every signed-in request runs as.
+  grant usage on schema auth to anon, authenticated, service_role;
+  grant execute on function auth.uid() to anon, authenticated, service_role;
 `;
 
 export interface FundTestDb extends Db {
   /** Sign in as the Member with this address, the way a Google sign-in would. */
   signInAs(email: string): Promise<string>;
-  /** Attempt a sign-in without assuming it will be allowed. */
+  /**
+   * Attempt a sign-in without assuming it will be allowed: runs the
+   * `before_user_created_hook` first, exactly as Supabase Auth does, and
+   * rejects with the hook's own message when it refuses.
+   */
   attemptSignIn(email: string): Promise<string>;
   signOut(): Promise<void>;
+
+  /**
+   * Run a query the way a signed-in request does -- as the `authenticated`
+   * role, carrying this auth user's claims. The fixture's own connection is
+   * superuser and bypasses row level security; this is the only way to see
+   * what a Member is actually allowed to read. Pass null for a visitor with no
+   * session at all.
+   */
+  asAuthenticated<T = Record<string, unknown>>(
+    authUserId: string | null,
+    text: string,
+    params?: unknown[],
+  ): Promise<T[]>;
+
+  /** The same thing shaped as the `Db` the app passes around. */
+  dbFor(authUserId: string | null): Db;
 
   memberId(email: string): Promise<string>;
   /** The one Balance figure: accepted Contributions less non-voided Expenses. */
@@ -102,7 +128,33 @@ export async function createFundDb(): Promise<FundTestDb> {
     return row.id;
   };
 
+  const asAuthenticated = async <T>(
+    authUserId: string | null,
+    text: string,
+    params: unknown[] = [],
+  ): Promise<T[]> => {
+    await query(`begin`);
+    try {
+      // The same two statements src/lib/db.server.ts sends, from the same source.
+      await query(CLAIM_MEMBER, [memberClaims(authUserId)]);
+      await query(BECOME_MEMBER);
+      const rows = await query<T>(text, params);
+      await query(`commit`);
+      return rows;
+    } catch (error) {
+      await query(`rollback`);
+      throw error;
+    }
+  };
+
   const attemptSignIn = async (email: string) => {
+    const [decision] = await query<{ result: { error?: { message: string } } }>(
+      `select before_user_created_hook($1::jsonb) as result`,
+      [JSON.stringify({ user: { email } })],
+    );
+    const refusal = decision!.result.error;
+    if (refusal) throw new Error(refusal.message);
+
     const [user] = await query<{ id: string }>(
       `insert into auth.users (email) values (lower($1)) returning id`,
       [email],
@@ -130,6 +182,12 @@ export async function createFundDb(): Promise<FundTestDb> {
 
     async signOut() {
       await setClaims(null);
+    },
+
+    asAuthenticated,
+
+    dbFor(authUserId) {
+      return { query: (text, params) => asAuthenticated(authUserId, text, params) };
     },
 
     async balance() {

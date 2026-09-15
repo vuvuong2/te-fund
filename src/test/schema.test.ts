@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NOT_ON_ROSTER, OUTSIDE_DOMAIN } from "@/lib/auth/refusal";
 import { int } from "@/lib/db";
 import {
   createFundDb,
@@ -20,9 +21,10 @@ import {
  * onwards) its tests point at that module instead; these stay as the proof
  * that the substrate underneath it behaves.
  *
- * Not covered here: the RLS policies. This fixture connects as superuser, so
- * row level security is bypassed — proving it blocks a non-Member needs a real
- * Supabase instance (VN-6).
+ * The fixture's own connection is superuser, so row level security is bypassed
+ * on it. `asAuthenticated` re-enters as the `authenticated` role with a
+ * Member's claims, which is what the policies are written against, so the
+ * refusals below are the real ones rather than a description of them.
  */
 
 const SEPTEMBER = "2026-09-01"; // Tuan Tran holds it, per the seed
@@ -77,21 +79,150 @@ describe("signing in", () => {
   });
 
   it("refuses a sign-in from outside @timeedit.com", async () => {
-    await expect(db.attemptSignIn("outsider@gmail.com")).rejects.toThrow(
-      /Only @timeedit.com accounts may sign in/,
-    );
+    // The sentences are asserted through the constants the sign-in screen
+    // matches on, so rewording the SQL without rewording the screen fails here.
+    await expect(db.attemptSignIn("outsider@gmail.com")).rejects.toThrow(OUTSIDE_DOMAIN);
   });
 
   it("refuses a company address that is not on the roster", async () => {
-    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(
-      /No Member on the roster has the address/,
+    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(NOT_ON_ROSTER);
+  });
+
+  it("names the address it refused, so the person can see which account they used", async () => {
+    await expect(db.attemptSignIn("ceo@timeedit.com")).rejects.toThrow(/ceo@timeedit.com/);
+  });
+
+  it("refuses a Member who has left the team", async () => {
+    await db.query(`update members set left_on = current_date - 30 where email = $1`, [THU_VU]);
+
+    await expect(db.attemptSignIn(THU_VU)).rejects.toThrow(NOT_ON_ROSTER);
+  });
+
+  it("stops resolving a Member who leaves, without waiting for their session to expire", async () => {
+    const thu = await db.signInAs(THU_VU);
+    await db.query(`update members set left_on = current_date where email = $1`, [THU_VU]);
+
+    const [row] = await db.asAuthenticated<{ id: string | null }>(
+      thu,
+      `select current_member_id() as id`,
     );
+    expect(row!.id).toBeNull();
+  });
+
+  it("cannot be talked into reading a members table the caller invented", async () => {
+    const thu = await db.signInAs(THU_VU);
+    const thuId = await db.memberId(THU_VU);
+    const yenId = await db.memberId(YEN_VU);
+
+    // pg_temp is searched ahead of the schema a function names, so a table made
+    // here would answer for the roster unless the function pins its path.
+    await db.asAuthenticated(thu, `create temp table members (id uuid, auth_user_id uuid)`);
+    await db.asAuthenticated(thu, `insert into pg_temp.members values ($1::uuid, auth.uid())`, [
+      yenId,
+    ]);
+
+    const [row] = await db.asAuthenticated<{ id: string }>(thu, `select current_member_id() as id`);
+    expect(row!.id).toBe(thuId);
   });
 
   it("leaves current_member_id null when nobody is signed in", async () => {
     await db.signOut();
     const [row] = await db.query<{ id: string | null }>(`select current_member_id() as id`);
     expect(row!.id).toBeNull();
+  });
+});
+
+describe("what a signed-in Member may read", () => {
+  it("shows the roster to a Member who signed in", async () => {
+    const thu = await db.signInAs(THU_VU);
+    const rows = await db.asAuthenticated(thu, `select full_name from members`);
+    expect(rows).toHaveLength(6);
+  });
+
+  it("shows a signed-out visitor nothing at all", async () => {
+    const rows = await db.asAuthenticated(null, `select full_name from members`);
+    expect(rows).toEqual([]);
+  });
+
+  it("shows the Balance to a Member", async () => {
+    await db.fundWith(1_000_000);
+    const vu = await db.signInAs(VU_VUONG);
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      vu,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(1_000_000);
+  });
+
+  it("keeps the Balance from a Google account with no Member behind it", async () => {
+    await db.fundWith(1_000_000);
+    // A session that outlived its Member, or a token from elsewhere in the
+    // company: authenticated, but current_member_id() finds nobody.
+    const [stranger] = await db.query<{ id: string }>(
+      `insert into auth.users (email) values ('ceo@timeedit.com') returning id`,
+    );
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      stranger!.id,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(0);
+  });
+
+  it("keeps the Fund's overview from a signed-out visitor", async () => {
+    await db.fundWith(1_000_000);
+
+    const [row] = await db.asAuthenticated<{ balance_vnd: string | number }>(
+      null,
+      `select balance_vnd from fund_overview`,
+    );
+    expect(int(row!.balance_vnd)).toBe(0);
+  });
+
+  it("keeps a Member who has left out of the Fund", async () => {
+    await db.fundWith(1_000_000);
+    const thu = await db.signInAs(THU_VU);
+    await db.query(`update members set left_on = current_date where email = $1`, [THU_VU]);
+
+    const [row] = await db.asAuthenticated<{ v: string | number }>(
+      thu,
+      `select fund_balance() as v`,
+    );
+    expect(int(row!.v)).toBe(0);
+  });
+
+  it("keeps the Ledger from a signed-out visitor", async () => {
+    await db.fundWith(1_000_000);
+    const rows = await db.asAuthenticated(null, `select * from ledger`);
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("what the anonymous role may reach", () => {
+  it("may execute nothing in the Fund's schema", async () => {
+    // Postgres grants EXECUTE to PUBLIC on every new function, and `anon`
+    // inherits it: revoking from `anon` alone takes nothing away.
+    const rows = await db.query<{ name: string }>(
+      `select p.proname as name
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and has_function_privilege('anon', p.oid, 'execute')
+        order by p.proname`,
+    );
+
+    expect(rows.map((r) => r.name)).toEqual([]);
+  });
+
+  it("may read nothing the Fund keeps", async () => {
+    const rows = await db.query<{ name: string }>(
+      `select c.relname as name
+         from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public'
+          and c.relkind in ('r', 'v')
+          and has_table_privilege('anon', c.oid, 'select')
+        order by c.relname`,
+    );
+
+    expect(rows.map((r) => r.name)).toEqual([]);
   });
 });
 
