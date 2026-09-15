@@ -109,6 +109,22 @@ describe("signing in", () => {
     expect(row!.id).toBeNull();
   });
 
+  it("cannot be talked into reading a members table the caller invented", async () => {
+    const thu = await db.signInAs(THU_VU);
+    const thuId = await db.memberId(THU_VU);
+    const yenId = await db.memberId(YEN_VU);
+
+    // pg_temp is searched ahead of the schema a function names, so a table made
+    // here would answer for the roster unless the function pins its path.
+    await db.asAuthenticated(thu, `create temp table members (id uuid, auth_user_id uuid)`);
+    await db.asAuthenticated(thu, `insert into pg_temp.members values ($1::uuid, auth.uid())`, [
+      yenId,
+    ]);
+
+    const [row] = await db.asAuthenticated<{ id: string }>(thu, `select current_member_id() as id`);
+    expect(row!.id).toBe(thuId);
+  });
+
   it("leaves current_member_id null when nobody is signed in", async () => {
     await db.signOut();
     const [row] = await db.query<{ id: string | null }>(`select current_member_id() as id`);
