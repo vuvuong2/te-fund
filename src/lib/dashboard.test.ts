@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { createFundDb, TUAN_TRAN, VU_VUONG, type FundTestDb } from "@/test/fund-db";
+import { createFundDb, type FundTestDb, TUAN_TRAN, VU_VUONG } from "@/test/fund-db";
 import { readDashboard } from "./dashboard";
 
 let db: FundTestDb;

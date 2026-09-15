@@ -1,6 +1,6 @@
-import { formatMonth, formatVnd } from "@/lib/format";
-import { fundDb } from "@/lib/db.server";
 import { readDashboard } from "@/lib/dashboard";
+import { fundDb } from "@/lib/db.server";
+import { formatMonth, formatVnd } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -58,9 +58,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold tracking-wide text-stone-500 uppercase">
-          The roster
-        </h2>
+        <h2 className="text-sm font-semibold tracking-wide text-stone-500 uppercase">The roster</h2>
         <ul className="mt-2 divide-y divide-stone-200 rounded-lg border border-stone-200 bg-white">
           {roster.map((member) => (
             <li key={member.email} className="flex items-center justify-between gap-3 px-4 py-3">

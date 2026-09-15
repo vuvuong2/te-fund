@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { int } from "@/lib/db";
 import {
   createFundDb,
+  type FundTestDb,
   THU_VU,
   TIEN_LAI,
   TUAN_TRAN,
   VIET_LAM,
   VU_VUONG,
   YEN_VU,
-  type FundTestDb,
 } from "./fund-db";
 
 /**
@@ -103,7 +103,10 @@ describe("the Holder rotation", () => {
 
   it("wraps from the last given name back to the first", async () => {
     const yen = await db.memberId(YEN_VU);
-    await db.query(`insert into months (month_start, holder_id) values (date '2026-12-01', $1::uuid)`, [yen]);
+    await db.query(
+      `insert into months (month_start, holder_id) values (date '2026-12-01', $1::uuid)`,
+      [yen],
+    );
 
     await db.query(`select ensure_month(date '2027-01-01')`);
     expect(await db.holderOf("2027-01-01")).toBe("Thu Vu");
@@ -112,7 +115,10 @@ describe("the Holder rotation", () => {
   it("keeps an override rather than recomputing it", async () => {
     await db.query(`select ensure_month($1::date)`, [OCTOBER]);
     const thu = await db.memberId(THU_VU);
-    await db.query(`update months set holder_id = $1::uuid where month_start = $2::date`, [thu, OCTOBER]);
+    await db.query(`update months set holder_id = $1::uuid where month_start = $2::date`, [
+      thu,
+      OCTOBER,
+    ]);
 
     await db.query(`select ensure_month($1::date)`, [OCTOBER]);
     expect(await db.holderOf(OCTOBER)).toBe("Thu Vu");
@@ -121,7 +127,10 @@ describe("the Holder rotation", () => {
   it("carries the rotation on from an override", async () => {
     await db.query(`select ensure_month($1::date)`, [OCTOBER]);
     const thu = await db.memberId(THU_VU);
-    await db.query(`update months set holder_id = $1::uuid where month_start = $2::date`, [thu, OCTOBER]);
+    await db.query(`update months set holder_id = $1::uuid where month_start = $2::date`, [
+      thu,
+      OCTOBER,
+    ]);
 
     await db.query(`select ensure_month(date '2026-11-01')`);
     expect(await db.holderOf("2026-11-01")).toBe("Tien Lai");
@@ -191,9 +200,9 @@ describe("Acceptance", () => {
     const claim = await db.raiseClaim(VU_VUONG, 130900, "Taxi to the venue");
 
     await db.signInAs(VU_VUONG);
-    await expect(db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER])).rejects.toThrow(
-      /Only the Holder of 2026-09-01 may accept a Claim/,
-    );
+    await expect(
+      db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]),
+    ).rejects.toThrow(/Only the Holder of 2026-09-01 may accept a Claim/);
   });
 
   it("refuses a Claim the Fund cannot cover, and says by how much", async () => {
@@ -201,9 +210,9 @@ describe("Acceptance", () => {
     const claim = await db.raiseClaim(VU_VUONG, 500_000, "Dinner for the team");
 
     await db.signInAs(TUAN_TRAN);
-    await expect(db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER])).rejects.toThrow(
-      /The Fund holds 100000 VND, less than the 500000 VND claimed/,
-    );
+    await expect(
+      db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]),
+    ).rejects.toThrow(/The Fund holds 100000 VND, less than the 500000 VND claimed/);
     expect(await db.balance()).toBe(100_000);
   });
 
@@ -214,10 +223,13 @@ describe("Acceptance", () => {
     await db.signInAs(TUAN_TRAN);
     await db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]);
 
-    const expenses = await db.query<{ amount_vnd: string; paid_by_id: string; description: string }>(
-      `select amount_vnd, paid_by_id, description from expenses where claim_id = $1::uuid`,
-      [claim],
-    );
+    const expenses = await db.query<{
+      amount_vnd: string;
+      paid_by_id: string;
+      description: string;
+    }>(`select amount_vnd, paid_by_id, description from expenses where claim_id = $1::uuid`, [
+      claim,
+    ]);
     expect(expenses).toHaveLength(1);
     expect(int(expenses[0]!.amount_vnd)).toBe(130900);
     expect(expenses[0]!.paid_by_id).toBe(await db.memberId(VU_VUONG));
@@ -231,9 +243,9 @@ describe("Acceptance", () => {
     await db.signInAs(TUAN_TRAN);
     await db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]);
 
-    await expect(db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER])).rejects.toThrow(
-      /is already accepted/,
-    );
+    await expect(
+      db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]),
+    ).rejects.toThrow(/is already accepted/);
   });
 
   it("lets a Holder raise and settle their own Claim", async () => {
@@ -256,7 +268,10 @@ describe("Acceptance", () => {
 
     await db.signInAs(VU_VUONG);
     await db.query(`select cancel_claim($1::uuid)`, [claim]);
-    const [row] = await db.query<{ status: string }>(`select status from claims where id = $1::uuid`, [claim]);
+    const [row] = await db.query<{ status: string }>(
+      `select status from claims where id = $1::uuid`,
+      [claim],
+    );
     expect(row!.status).toBe("cancelled");
   });
 
@@ -268,9 +283,9 @@ describe("Acceptance", () => {
     await db.query(`select cancel_claim($1::uuid)`, [claim]);
 
     await db.signInAs(TUAN_TRAN);
-    await expect(db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER])).rejects.toThrow(
-      /is already cancelled/,
-    );
+    await expect(
+      db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]),
+    ).rejects.toThrow(/is already cancelled/);
   });
 });
 
@@ -380,9 +395,9 @@ describe("voiding", () => {
     );
     await db.query(`select void_expense($1::uuid, 'Recorded twice')`, [expense!.id]);
 
-    await expect(
-      db.query(`select void_expense($1::uuid, 'Again')`, [expense!.id]),
-    ).rejects.toThrow(/does not exist or is already voided/);
+    await expect(db.query(`select void_expense($1::uuid, 'Again')`, [expense!.id])).rejects.toThrow(
+      /does not exist or is already voided/,
+    );
   });
 });
 
@@ -421,29 +436,41 @@ describe("the Ledger", () => {
 describe("the constraints that keep the record honest", () => {
   it("rejects an amount of zero", async () => {
     await expect(
-      db.query(`insert into contributions (month_start, amount_vnd, source)
-                values (ensure_month($1::date), 0, 'company')`, [SEPTEMBER]),
+      db.query(
+        `insert into contributions (month_start, amount_vnd, source)
+                values (ensure_month($1::date), 0, 'company')`,
+        [SEPTEMBER],
+      ),
     ).rejects.toThrow(/amount_vnd_check|violates check constraint/);
   });
 
   it("rejects a negative amount", async () => {
     await expect(
-      db.query(`insert into expenses (month_start, amount_vnd, description)
-                values (ensure_month($1::date), -1000, 'Refund')`, [SEPTEMBER]),
+      db.query(
+        `insert into expenses (month_start, amount_vnd, description)
+                values (ensure_month($1::date), -1000, 'Refund')`,
+        [SEPTEMBER],
+      ),
     ).rejects.toThrow(/violates check constraint/);
   });
 
   it("makes a Member Contribution name the Member", async () => {
     await expect(
-      db.query(`insert into contributions (month_start, amount_vnd, source)
-                values (ensure_month($1::date), 1000000, 'member')`, [SEPTEMBER]),
+      db.query(
+        `insert into contributions (month_start, amount_vnd, source)
+                values (ensure_month($1::date), 1000000, 'member')`,
+        [SEPTEMBER],
+      ),
     ).rejects.toThrow(/contributions_member_named/);
   });
 
   it("keeps an Expense's date inside its Month", async () => {
     await expect(
-      db.query(`insert into expenses (month_start, occurred_on, amount_vnd, description)
-                values (ensure_month($1::date), date '2026-10-05', 130900, 'Taxi')`, [SEPTEMBER]),
+      db.query(
+        `insert into expenses (month_start, occurred_on, amount_vnd, description)
+                values (ensure_month($1::date), date '2026-10-05', 130900, 'Taxi')`,
+        [SEPTEMBER],
+      ),
     ).rejects.toThrow(/expenses_date_in_month/);
   });
 
@@ -467,8 +494,11 @@ describe("the constraints that keep the record honest", () => {
     await db.query(`select accept_claim($1::uuid, $2::date)`, [claim, IN_SEPTEMBER]);
 
     await expect(
-      db.query(`insert into expenses (month_start, amount_vnd, description, claim_id)
-                values (ensure_month($1::date), 130900, 'Taxi again', $2::uuid)`, [SEPTEMBER, claim]),
+      db.query(
+        `insert into expenses (month_start, amount_vnd, description, claim_id)
+                values (ensure_month($1::date), 130900, 'Taxi again', $2::uuid)`,
+        [SEPTEMBER, claim],
+      ),
     ).rejects.toThrow(/expenses_claim_id_key|duplicate key/);
   });
 });
@@ -502,7 +532,11 @@ describe("the audit trail", () => {
     await db.signInAs(YEN_VU);
     await db.query(`select void_expense($1::uuid, 'Recorded twice')`, [expense!.id]);
 
-    const [entry] = await db.query<{ action: string; actor_id: string; changed: Record<string, unknown> }>(
+    const [entry] = await db.query<{
+      action: string;
+      actor_id: string;
+      changed: Record<string, unknown>;
+    }>(
       `select action, actor_id, changed from audit_log
         where table_name = 'expenses' and row_id = $1::text and action = 'update' order by at desc limit 1`,
       [expense!.id],
