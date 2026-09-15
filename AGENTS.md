@@ -95,5 +95,8 @@ description when you use one**, naming what you skipped and why.
 
 The rule is disclosure rather than prohibition: a flat ban gets broken quietly
 at the end of a long day, and then nobody knows which commits were checked.
-CI runs the same checks on every pull request, so a bypass delays the finding
-rather than hiding it.
+
+A bypass delays the finding rather than hiding it. `main` is protected and the
+CI `check` job is a required status check, so work that skipped the hooks and
+fails them cannot merge — it just fails later, in public, instead of on your
+machine in twenty seconds.
