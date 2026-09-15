@@ -1,4 +1,4 @@
-import { day, int, type Db } from "./db";
+import { type Db, day, int } from "./db";
 
 /**
  * What the Dashboard reads.
