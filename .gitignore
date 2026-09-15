@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment — never commit Supabase keys
+.env
+.env.*
+!.env.example
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Agent scratch space. Specs are published to the Jira Epic; these are drafts.
+.scratch/
+
+# OS and editor
+.DS_Store
+*.log
