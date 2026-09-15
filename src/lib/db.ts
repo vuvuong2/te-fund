@@ -22,3 +22,20 @@ export function day(value: string | Date): string {
   }
   return value.slice(0, 10);
 }
+
+/**
+ * What makes a connection the Member's, in the two statements Postgres needs.
+ *
+ * Both are transaction-local, which is what keeps the claim and the role from
+ * outliving the statement on a pooled connection. They live here rather than in
+ * db.server.ts because the test fixture sends the same preamble to its own
+ * Postgres: one copy means the suite cannot quietly stop proving what
+ * production does.
+ */
+export const CLAIM_MEMBER = `select set_config('request.jwt.claims', $1, true)`;
+export const BECOME_MEMBER = `set local role authenticated`;
+
+/** The claim itself. Null is a visitor with no session, and claims nothing. */
+export function memberClaims(authUserId: string | null): string {
+  return authUserId === null ? "" : JSON.stringify({ sub: authUserId, role: "authenticated" });
+}

@@ -1,6 +1,6 @@
 import "server-only";
 import postgres from "postgres";
-import type { Db } from "./db";
+import { BECOME_MEMBER, CLAIM_MEMBER, type Db, memberClaims } from "./db";
 
 /**
  * The Supabase Postgres, reached over a plain connection string as the Member
@@ -27,7 +27,7 @@ export function fundDbAs(authUserId: string): Db | null {
 
   client ??= postgres(url, { prepare: false, max: 4 });
   const sql = client;
-  const claims = JSON.stringify({ sub: authUserId, role: "authenticated" });
+  const claims = memberClaims(authUserId);
 
   return {
     async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
@@ -35,8 +35,8 @@ export function fundDbAs(authUserId: string): Db | null {
       // are scoped to this statement rather than left on a pooled connection
       // for whoever picks it up next.
       const rows = await sql.begin(async (tx) => {
-        await tx.unsafe(`select set_config('request.jwt.claims', $1, true)`, [claims]);
-        await tx.unsafe(`set local role authenticated`);
+        await tx.unsafe(CLAIM_MEMBER, [claims]);
+        await tx.unsafe(BECOME_MEMBER);
         return tx.unsafe(text, params as never[]);
       });
       return rows as unknown as T[];

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
-import { type Db, int } from "@/lib/db";
+import { BECOME_MEMBER, CLAIM_MEMBER, type Db, int, memberClaims } from "@/lib/db";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 const SEED = join(process.cwd(), "supabase", "seed.sql");
@@ -135,10 +135,9 @@ export async function createFundDb(): Promise<FundTestDb> {
   ): Promise<T[]> => {
     await query(`begin`);
     try {
-      await query(`select set_config('request.jwt.claims', $1, true)`, [
-        authUserId === null ? "" : JSON.stringify({ sub: authUserId, role: "authenticated" }),
-      ]);
-      await query(`set local role authenticated`);
+      // The same two statements src/lib/db.server.ts sends, from the same source.
+      await query(CLAIM_MEMBER, [memberClaims(authUserId)]);
+      await query(BECOME_MEMBER);
       const rows = await query<T>(text, params);
       await query(`commit`);
       return rows;
