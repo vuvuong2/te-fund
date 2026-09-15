@@ -1,0 +1,54 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    // SQL and Markdown are deliberately outside the gate — see AGENTS.md.
+    "ignoreUnknown": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    // 100, not Biome's default 80, to match how this repo was already wrapped by hand.
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        // Off, not merely tolerated. The non-null assertions here are deliberate:
+        // `overview!` reads the fund_overview view, which returns exactly one row,
+        // and the test fixture asserts on `insert ... returning`. Biome's only
+        // offered fix is the *unsafe* rewrite to `?.`, which would turn a hard
+        // failure into a silent `undefined` in the suite that guards the Fund's
+        // money. Leaving it on means 42 permanent warnings, which teaches everyone
+        // to ignore the gate's output.
+        "noNonNullAssertion": "off"
+      }
+    }
+  },
+  "css": {
+    // Tailwind v4 puts @theme in globals.css; without this Biome cannot parse it.
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}
