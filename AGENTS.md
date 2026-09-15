@@ -48,3 +48,52 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`,
 
 Pull request titles follow the same format, so that a squash merge lands a
 valid commit message.
+
+## Quality gate
+
+Lint and format run before every commit, and the slow checks run before every
+push. Both are mechanical — `lefthook.yml` installs them, and `npm install`
+installs the hooks. Do not rely on remembering to run them.
+
+| When | Runs | Roughly |
+| --- | --- | --- |
+| `pre-commit` | Biome format + lint, staged files only, auto-fixing and re-staging | under a second |
+| `pre-push` | `npm run typecheck`, `npm test`, `npm run build` | tens of seconds |
+| CI (`pull_request`, `push` to `main`) | all of the above, check-only | a couple of minutes |
+
+Run them by hand with `npm run lint` (check) or `npm run lint:fix` (rewrite).
+
+The commit hook **rewrites your staged files and re-stages them**. If you have
+staged part of a file with `git add -p`, the rest of that file's formatting
+comes along with it.
+
+### Deliberately outside the gate
+
+**SQL and Markdown are not checked, and this is a decision, not an oversight —
+do not "fix" it by adding tooling.**
+
+`supabase/migrations/` is the highest-consequence code here, but both defects
+found in it so far were semantic, not stylistic: an audit trigger reading a
+column that does not exist on `months`, and views missing `security_invoker`
+that leaked the Fund's Balance to anonymous callers. No formatter catches
+either. The test suite is the real gate on SQL behaviour, and it runs at push.
+A SQL linter would also mean Python tooling in a Node repository, against the
+repo-local-tooling pattern followed everywhere else here.
+
+Markdown — `CONTEXT.md`, the ADRs, this file — is hand-wrapped prose. A
+formatter would fight the author.
+
+Biome's `style/noNonNullAssertion` is off for the reason recorded in
+`biome.jsonc`: its only offered fix is unsafe, and would turn a hard failure
+into a silent `undefined` in the suite that guards the Fund's money.
+
+### Bypassing
+
+`git commit --no-verify` and `git push --no-verify` work, and sometimes they
+are the right call. **Say so in the commit body or the pull request
+description when you use one**, naming what you skipped and why.
+
+The rule is disclosure rather than prohibition: a flat ban gets broken quietly
+at the end of a long day, and then nobody knows which commits were checked.
+CI runs the same checks on every pull request, so a bypass delays the finding
+rather than hiding it.
