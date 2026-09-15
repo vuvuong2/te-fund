@@ -17,14 +17,31 @@ remembering to ask who is looking.
 
 Grants are written out (`20260915120700_member_grants.sql`) rather than left to
 Supabase's expose-new-tables default, because policies are only half of the
-answer — Postgres asks first whether the role may touch the table at all. A
-table added later is unreachable until someone says otherwise. The anonymous
-role is granted nothing.
+answer — Postgres asks first whether the role may touch the table at all. The
+grants are doing more of the work than the policies are: every policy in
+`20260915120200_rls.sql` reads `current_member_id() is not null`, which is the
+flat-roles design talking — any Member may record and correct anything, and the
+audit log is what makes that safe. So what a role may reach is a question of
+grants, and what a Member may do once inside is a question of the audit trail,
+not of the policies.
+
+A table added later is unreachable until someone says otherwise — but only if
+`auto_expose_new_tables` is off, which this repo sets in `config.toml` and the
+hosted project must be set to separately. The anonymous role is granted
+nothing, which took two migrations: `EXECUTE` is granted to `PUBLIC` on every
+new function, and `anon` inherits it, so revoking from `anon` alone took
+nothing away (`20260915121000`).
 
 `current_member_id()` reads the roster with the definer's rights. As an
 invoker's-rights function it recursed: every policy calls it, and it reads
 `members`, whose policy calls it again. That defect sat in the schema from VN-2
 until sign-in made anything run as `authenticated`.
+
+Definer's rights then have to say which `members` they mean. `search_path =
+public` is not enough, because `pg_temp` is searched ahead of it and every
+signed-in Member may create a temporary table; an empty search path with
+schema-qualified names is the fix (`20260915121100`). The money functions from
+VN-2 still have no search path set at all.
 
 Each query runs inside its own transaction, because `set local` is what keeps
 the claim and the role from outliving the statement on a pooled connection.

@@ -36,6 +36,8 @@ URL is rendered, because anyone can type one.
 The trigger on `auth.users` still exists and still binds the account to the
 Member — that half was never a refusal.
 
-A Member removed from the roster is not signed out. They are refused the next
-time a screen loads, by the gate in `src/lib/session.ts` rather than by this
-hook, which only ever sees a first sign-in.
+A Member who leaves is not signed out. `left_on` takes them off the roster, and
+`current_member_id()` stops resolving them, so they are refused the next time a
+screen loads by the gate in `src/lib/session.ts` rather than by this hook, which
+only ever sees a first sign-in. Their rows stay in the ledger and the audit log
+still names them: recorded as having left, not removed.

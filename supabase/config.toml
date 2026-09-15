@@ -20,7 +20,11 @@ max_rows = 1000
 # `postgres` are reachable through the Data API roles (`anon`, `authenticated`, `service_role`)
 # without explicit GRANTs, matching the cloud default. Set to `false` to require explicit GRANTs
 # instead. Left unset, a fresh project falls back to `true`.
-# auto_expose_new_tables = true
+# The Fund grants explicitly (20260915120700_member_grants.sql), so a table added
+# later should be unreachable until someone says otherwise. Left unset this
+# falls back to true and quietly grants it to anon and authenticated. The hosted
+# project has its own copy of this setting and needs it set there too.
+auto_expose_new_tables = false
 
 [api.tls]
 # Enable HTTPS endpoints locally using a self-signed certificate.
