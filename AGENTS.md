@@ -100,3 +100,7 @@ A bypass delays the finding rather than hiding it. `main` is protected and the
 CI `check` job is a required status check, so work that skipped the hooks and
 fails them cannot merge — it just fails later, in public, instead of on your
 machine in twenty seconds.
+
+## Pull Request convention
+
+PR title with conventional commit, also for branch name
