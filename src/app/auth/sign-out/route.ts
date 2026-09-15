@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isRefusalCode } from "@/lib/auth/refusal";
 import { requestOrigin } from "@/lib/request-origin";
-import { supabaseForRequest } from "@/lib/supabase/server";
+import { clearSessionCookies, supabaseForRequest } from "@/lib/supabase/server";
 
 /**
  * Ending a session.
@@ -20,7 +20,7 @@ async function signOut(request: Request) {
   const refused = new URL(request.url).searchParams.get("refused");
   const query = isRefusalCode(refused) ? `?refused=${refused}` : "";
   const origin = await requestOrigin();
-  return NextResponse.redirect(`${origin}/sign-in${query}`, { status: 303 });
+  return clearSessionCookies(NextResponse.redirect(`${origin}/sign-in${query}`, { status: 303 }));
 }
 
 export const GET = signOut;

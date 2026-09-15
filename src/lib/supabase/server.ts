@@ -1,6 +1,7 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 
 /**
  * Supabase Auth for this request.
@@ -44,4 +45,20 @@ export async function supabaseForRequest() {
       },
     },
   });
+}
+
+/**
+ * Take the session off a response, whatever Supabase managed.
+ *
+ * `signOut()` writes through the cookie jar and can fail -- an auth server
+ * having a bad minute is enough. A session that survives its own sign-out
+ * bounces between the gate and the screen until it expires, so the cookies come
+ * off the response we are already holding rather than on the strength of a call
+ * that may not have happened.
+ */
+export async function clearSessionCookies(response: NextResponse): Promise<NextResponse> {
+  for (const { name } of (await cookies()).getAll()) {
+    if (name.startsWith("sb-")) response.cookies.delete(name);
+  }
+  return response;
 }

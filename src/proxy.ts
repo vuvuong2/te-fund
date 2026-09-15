@@ -13,9 +13,12 @@ import { type NextRequest, NextResponse } from "next/server";
  */
 
 /** Reachable with no session: the sign-in screen, and the routes that make one. */
-const OPEN = ["/sign-in", "/auth/"];
+const OPEN = ["/sign-in", "/auth"];
 
-const isOpen = (path: string) => OPEN.some((open) => path === open || path.startsWith(open));
+// Whole path segments only. `startsWith` alone would open /sign-in-anything to
+// a visitor with no session, which is a strange way for an allow-list around
+// money to fail.
+const isOpen = (path: string) => OPEN.some((open) => path === open || path.startsWith(`${open}/`));
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;

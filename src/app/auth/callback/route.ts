@@ -3,7 +3,7 @@ import { COMPANY_DOMAIN, classifyRefusal, type RefusalCode } from "@/lib/auth/re
 import { fundDbAs } from "@/lib/db.server";
 import { readSignedInMember } from "@/lib/member";
 import { requestOrigin } from "@/lib/request-origin";
-import { supabaseForRequest } from "@/lib/supabase/server";
+import { clearSessionCookies, supabaseForRequest } from "@/lib/supabase/server";
 
 /**
  * Where Google sends a Member back to.
@@ -26,6 +26,14 @@ export async function GET(request: Request) {
   if (!code) return refuse("unknown");
 
   const supabase = await supabaseForRequest();
+
+  // A refusal after the session exists has to take the session away again, or
+  // the gate and the sign-in screen send the visitor back and forth.
+  const refuseAndSignOut = async (code: RefusalCode) => {
+    await supabase.auth.signOut();
+    return clearSessionCookies(refuse(code));
+  };
+
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) {
     // A refusal can also arrive as a failed exchange rather than as an error on
@@ -38,21 +46,15 @@ export async function GET(request: Request) {
   }
 
   const email = data.user.email?.toLowerCase() ?? "";
-  if (email.split("@")[1] !== COMPANY_DOMAIN) {
-    await supabase.auth.signOut();
-    return refuse("outside-domain");
-  }
+  if (email.split("@")[1] !== COMPANY_DOMAIN) return refuseAndSignOut("outside-domain");
 
   const db = fundDbAs(data.user.id);
   if (!db) {
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/sign-in`);
+    return clearSessionCookies(NextResponse.redirect(`${origin}/sign-in`));
   }
 
-  if (!(await readSignedInMember(db))) {
-    await supabase.auth.signOut();
-    return refuse("not-on-roster");
-  }
+  if (!(await readSignedInMember(db))) return refuseAndSignOut("not-on-roster");
 
   return NextResponse.redirect(`${origin}/`);
 }
